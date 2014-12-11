@@ -1,0 +1,51 @@
+#!/bin/sh
+
+# rescue shell in case of failure
+rescue_shell(){
+  echo "Something went wrong. Dropping you into a shell."
+  busybox --install -s
+  exec /bin/sh
+}
+
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+# azerty keyboard
+loadkmap < /etc/kmap-fr
+
+clear
+echo 1 > /proc/sys/kernel/printk
+echo -e "$(cat /etc/msg)"
+
+
+cryptsetup luksOpen luks.key keyfs || rescue_shell
+
+mkdir keyfs
+mount -t ext4 -o ro /dev/mapper/keyfs keyfs || rescue shell
+echo 'Key found ...'
+
+echo 'Decrypt swap ...'
+cryptsetup --key-file keyfs/key luksOpen $(findfs UUID=36369eac-fa19-42d3-aa4a-b38d9c1ab541) swap || rescue_shell
+echo 'Decrypt / ...'
+cryptsetup --allow-discards --key-file keyfs/key luksOpen $(findfs UUID=c6e05c18-3c75-45ac-98b6-460d218d2064) root || rescue_shell
+echo 'Decrypt /data ...'
+cryptsetup --key-file keyfs/key luksOpen $(findfs UUID=1dc93c1f-954b-4fa5-99a9-e123a0686d71) data || rescue_shell
+
+echo 'All luks containers are mapped.'
+echo 'mount /root'
+mount -t ext4 -r /dev/mapper/root /newroot || rescue_shell
+
+# unload the key
+umount keyfs
+cryptsetup luksClose keyfs
+
+CMDLINE=$(cat /proc/cmdline)
+
+umount /dev
+umount /sys
+umount /proc
+
+echo 'Initramfs completed.'
+exec /bin/busybox switch_root /newroot /sbin/init $CMDLINE

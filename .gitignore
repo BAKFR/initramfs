@@ -1,0 +1,6 @@
+*~
+
+bin/cryptsetup
+bin/busybox
+
+luks.key
